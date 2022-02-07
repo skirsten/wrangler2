@@ -8,6 +8,9 @@ import { URL } from "node:url";
 import { watch } from "chokidar";
 import { getType } from "mime";
 import { buildWorker } from "../pages/functions/buildWorker";
+import { buildPlugin } from "../pages/functions/buildPlugin";
+import type { Config } from "../pages/functions/routes";
+import { writeRoutesModule } from "../pages/functions/routes";
 import { generateConfigFromFileTree } from "../pages/functions/filepath-routing";
 import { writeRoutesModule } from "../pages/functions/routes";
 import openInBrowser from "./open-in-browser";
@@ -651,6 +654,7 @@ async function buildFunctions({
   fallbackService = "ASSETS",
   watch = false,
   onEnd,
+  plugin = false,
 }: {
   scriptPath: string;
   outputConfigPath?: string;
@@ -660,6 +664,7 @@ async function buildFunctions({
   fallbackService?: string;
   watch?: boolean;
   onEnd?: () => void;
+  plugin?: boolean;
 }) {
   RUNNING_BUILDERS.forEach(
     (runningBuilder) => runningBuilder.stop && runningBuilder.stop()
@@ -686,17 +691,39 @@ async function buildFunctions({
     outfile: routesModule,
   });
 
-  RUNNING_BUILDERS.push(
-    await buildWorker({
-      routesModule,
-      outfile: scriptPath,
-      minify,
-      sourcemap,
-      fallbackService,
-      watch,
-      onEnd,
-    })
-  );
+  if (plugin) {
+    const packageJSON = JSON.parse(readFileSync("package.json").toString());
+    const pluginName = packageJSON.name;
+    if (!pluginName) {
+      throw new Error("package.json must include a 'name' for the plugin.");
+    }
+    const pluginAssetsDirectory = packageJSON?.directories?.assets;
+
+    RUNNING_BUILDERS.push(
+      await buildPlugin({
+        routesModule,
+        outfile: scriptPath,
+        minify,
+        sourcemap,
+        watch,
+        onEnd,
+        pluginName,
+        pluginAssetsDirectory,
+      })
+    );
+  } else {
+    RUNNING_BUILDERS.push(
+      await buildWorker({
+        routesModule,
+        outfile: scriptPath,
+        minify,
+        sourcemap,
+        fallbackService,
+        watch,
+        onEnd,
+      })
+    );
+  }
 }
 
 export const pages: BuilderCallback<unknown, unknown> = (yargs) => {
@@ -1014,6 +1041,11 @@ export const pages: BuilderCallback<unknown, unknown> = (yargs) => {
                 description:
                   "Watch for changes to the functions and automatically rebuild the Worker script",
               },
+              plugin: {
+                type: "boolean",
+                default: false,
+                description: "Build a plugin rather than a Worker script",
+              },
             }),
         async ({
           directory,
@@ -1023,6 +1055,7 @@ export const pages: BuilderCallback<unknown, unknown> = (yargs) => {
           sourcemap,
           fallbackService,
           watch,
+          plugin,
         }) => {
           await buildFunctions({
             scriptPath,
@@ -1032,6 +1065,7 @@ export const pages: BuilderCallback<unknown, unknown> = (yargs) => {
             sourcemap,
             fallbackService,
             watch,
+            plugin,
           });
         }
       )
