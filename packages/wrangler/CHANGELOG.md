@@ -1,5 +1,112 @@
 # wrangler
 
+## 0.0.20
+
+### Patch Changes
+
+- [#567](https://github.com/cloudflare/wrangler2/pull/567) [`05b81c5`](https://github.com/cloudflare/wrangler2/commit/05b81c5809b9ceed10d0c21c0f5f5de76b23a67d) Thanks [@threepointone](https://github.com/threepointone)! - fix: consolidate `getEntry()` logic
+
+  This consolidates some logic into `getEntry()`, namely including `guessWorkerFormat()` and custom builds. This simplifies the code for both `dev` and `publish`.
+
+  - Previously, the implementation of custom builds inside `dev` assumed it could be a long running process; however it's not (else consider that `publish` would never work).
+  - By running custom builds inside `getEntry()`, we can be certain that the entry point exists as we validate it and before we enter `dev`/`publish`, simplifying their internals
+  - We don't have to do periodic checks inside `wrangler dev` because it's now a one shot build (and always should have been)
+  - This expands test coverage a little for both `dev` and `publish`.
+  - The 'format' of a worker is intrinsic to its contents, so it makes sense to establish its value inside `getEntry()`
+  - This also means less async logic inside `<Dev/>`, which is always a good thing
+
+* [#591](https://github.com/cloudflare/wrangler2/pull/591) [`42c2c0f`](https://github.com/cloudflare/wrangler2/commit/42c2c0fda6820dc7b8c0005857459d55ec82d266) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - fix: add warning about setting upstream-protocol to `http`
+
+  We have not implemented setting upstream-protocol to `http` and currently do not intend to.
+
+  This change just adds a warning if a developer tries to do so and provides a link to an issue where they can add their use-case.
+
+- [#579](https://github.com/cloudflare/wrangler2/pull/579) [`2f0e59b`](https://github.com/cloudflare/wrangler2/commit/2f0e59bed76676f088403c7f0ceb9046668c547d) Thanks [@JacobMGEvans](https://github.com/JacobMGEvans)! - feat: Incomplete subcommands render a help message for that specific subcommand.
+
+* [#559](https://github.com/cloudflare/wrangler2/pull/559) [`16fb5e6`](https://github.com/cloudflare/wrangler2/commit/16fb5e686024aba614d805a4edb49fb53a8e32db) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - feat: support adding secrets in non-interactive mode
+
+  Now the user can pipe in the secret value to the `wrangler secret put` command.
+  For example:
+
+  ```
+  cat my-secret.txt | wrangler secret put secret-key --name worker-name
+  ```
+
+  This requires that the user is logged in, and has only one account, or that the `account_id` has been set in `wrangler.toml`.
+
+  Fixes #170
+
+- [#597](https://github.com/cloudflare/wrangler2/pull/597) [`94c2698`](https://github.com/cloudflare/wrangler2/commit/94c2698cd6d62ec7cb69530697f2eac2bf068163) Thanks [@caass](https://github.com/caass)! - Deprecate `wrangler route`, `wrangler route list`, and `wrangler route delete`
+
+  Users should instead modify their wrangler.toml or use the `--routes` flag when publishing
+  to manage routes.
+
+* [#564](https://github.com/cloudflare/wrangler2/pull/564) [`ffd5c0d`](https://github.com/cloudflare/wrangler2/commit/ffd5c0d1b93871e751371bf45498bfc468fa5b84) Thanks [@GregBrimble](https://github.com/GregBrimble)! - Request Pages OAuth scopes when logging in
+
+- [#561](https://github.com/cloudflare/wrangler2/pull/561) [`6e9a219`](https://github.com/cloudflare/wrangler2/commit/6e9a219f53b7d13bee94c8468846553df48c72c3) Thanks [@threepointone](https://github.com/threepointone)! - fix: resolve modules correctly in `wrangler dev --local`
+
+  This is an alternate fix to https://github.com/cloudflare/miniflare/pull/205, and fixes the error where miniflare would get confused resolving relative modules on macs because of `/var`/`/private/var` being symlinks. Instead, we `realpathSync` the bundle path before passing it on to miniflare, and that appears to fix the problem.
+
+  Test plan:
+
+  ```
+  cd packages/wrangler
+  npm run build
+  cd ../workers-chat-demo
+  npx wrangler dev --local
+  ```
+
+  Fixes https://github.com/cloudflare/wrangler2/issues/443
+
+* [#592](https://github.com/cloudflare/wrangler2/pull/592) [`56886cf`](https://github.com/cloudflare/wrangler2/commit/56886cfc7edf02cf0ae029f380a517c0142fd467) Thanks [@caass](https://github.com/caass)! - Stop reporting breadcrumbs to sentry
+
+  Sentry's SDK automatically tracks "breadcrumbs", which are pieces of information
+  that get tracked leading up to an exception. This can be useful for debugging
+  errors because it gives better insight into what happens before an error occurs,
+  so you can more easily understand and recreate exactly what happened before an
+  error occurred.
+
+  Unfortunately, Sentry automatically includes all `console` statements. And since
+  we use the console a lot (e.g. logging every request received in `wrangler dev`),
+  this is mostly useless. Additionally, since developers frequently use the console
+  to debug their workers we end up with a bunch of data that is not only irrelevant
+  to the reported error, but also contains data that could be potentially sensitive.
+
+  For now, we're turning off breadcrumbs entirely. Later, we might wish to add our
+  own breadcrumbs manually (e.g. add a "wrangler dev" breadcrumb when a user runs
+  `wrangler dev`), at which point we can selectively enable breadcrumbs to catch
+  only the ones we've put in there ourselves.
+
+- [#580](https://github.com/cloudflare/wrangler2/pull/580) [`8013e0a`](https://github.com/cloudflare/wrangler2/commit/8013e0a86cb309f912bd1068725d4a5535795082) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - feat: add support for `--local-protocol=https` to `wrangler dev`
+
+  This change adds full support for the setting the protocol that the localhost proxy server listens to.
+  Previously, it was only possible to use `HTTP`. But now you can set it to `HTTPS` as well.
+
+  To support `HTTPS`, Wrangler needs an SSL certificate.
+  Wrangler now generates a self-signed certificate, as needed, and caches it in the `~/.wrangler/local-cert` directory.
+  These certificates expire after 30 days and are regenerated by Wrangler as needed.
+
+  Note that if you use HTTPS then your browser will complain about the self-signed and you must tell it to accept the certificate before it will let you access the page.
+
+* [#580](https://github.com/cloudflare/wrangler2/pull/580) [`aaac8dd`](https://github.com/cloudflare/wrangler2/commit/aaac8ddfda9658a2cb35b757518ee085a994dfe5) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - fix: validate that local_protocol and upstream_protocol can only take "http" or "https"
+
+- [#568](https://github.com/cloudflare/wrangler2/pull/568) [`b6f2266`](https://github.com/cloudflare/wrangler2/commit/b6f226624417ffa4b5e7c3098d4955bc23d58603) Thanks [@caass](https://github.com/caass)! - Show an actionable error message when publishing to a workers.dev subdomain that hasn't been created yet.
+
+  When publishing a worker to workers.dev, you need to first have registered your workers.dev subdomain
+  (e.g. my-subdomain.workers.dev). We now check to ensure that the user has created their subdomain before
+  uploading a worker to workers.dev, and if they haven't, we provide a link to where they can go through
+  the workers onboarding flow and create one.
+
+* [#577](https://github.com/cloudflare/wrangler2/pull/577) [`7faf0eb`](https://github.com/cloudflare/wrangler2/commit/7faf0ebec1aa92f64c1a1d0d702d03f4cfa868cd) Thanks [@threepointone](https://github.com/threepointone)! - fix: `config.site.entry-point` as a breaking deprecation
+
+  This makes configuring `site.entry-point` in config as a breaking deprecation, and throws an error. We do this because existing apps with `site.entry-point` _won't_ work in v2.
+
+- [#578](https://github.com/cloudflare/wrangler2/pull/578) [`c56847c`](https://github.com/cloudflare/wrangler2/commit/c56847cb261e9899d60b50599f910efa9cefdee9) Thanks [@threepointone](https://github.com/threepointone)! - fix: gracefully fail if we can't create `~/.wrangler/reporting.toml`
+
+  In some scenarios (CI/CD, docker, etc), we won't have write access to `~/.wrangler`. We already don't write a configuration file there if one passes a `CF_API_TOKEN`/`CLOUDFLARE_API_TOKEN` env var. This also adds a guard when writing the error reporting configuration file.
+
+* [#580](https://github.com/cloudflare/wrangler2/pull/580) [`9ef36a9`](https://github.com/cloudflare/wrangler2/commit/9ef36a903988d3c18982186ca272ff4d026ad8b2) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - fix: improve validation error message for fields that must be one of a selection of choices
+
 ## 0.0.19
 
 ### Patch Changes
