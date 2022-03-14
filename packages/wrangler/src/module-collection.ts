@@ -28,9 +28,15 @@ export const DEFAULT_MODULE_RULES: Config["rules"] = [
   { type: "CompiledWasm", globs: ["**/*.wasm"] },
 ];
 
-export default function makeModuleCollector(props: {
+export default function createModuleCollector(props: {
   format: CfScriptFormat;
   rules?: Config["rules"];
+  // a collection of "legacy" style module references, which are just file names
+  // we will eventually deprecate this functionality, hence the verbose greppable name
+  wrangler1xlegacyModuleReferences: {
+    rootDirectory: string;
+    fileNames: Set<string>;
+  };
 }): {
   modules: CfModule[];
   plugin: esbuild.Plugin;
@@ -97,12 +103,44 @@ export default function makeModuleCollector(props: {
 
           rule.globs.forEach((glob) => {
             build.onResolve(
-              { filter: globToRegExp(glob) },
+              {
+                // we create a regexp that can detect any of the module rule
+                // globs, as well as any of the legacy module references
+                filter: new RegExp(
+                  globToRegExp(glob).source +
+                    "|" +
+                    new RegExp(
+                      [...props.wrangler1xlegacyModuleReferences.fileNames]
+                        .map((fileName) => `^${fileName}$`)
+                        .join("|")
+                    ).source
+                ),
+              },
               async (args: esbuild.OnResolveArgs) => {
+                const isLegacyModuleReference =
+                  props.wrangler1xlegacyModuleReferences.fileNames.has(
+                    args.path
+                  );
+
+                if (isLegacyModuleReference) {
+                  console.warn(
+                    `Deprecation warning: detected a legacy module import in "./${path.relative(
+                      process.cwd(),
+                      args.importer
+                    )}". This will stop working in the future. Replace references to "${
+                      args.path
+                    }" with "./${args.path}";`
+                  );
+                }
+
                 // take the file and massage it to a
                 // transportable/manageable format
-
-                const filePath = path.join(args.resolveDir, args.path);
+                const filePath = isLegacyModuleReference
+                  ? path.join(
+                      props.wrangler1xlegacyModuleReferences.rootDirectory,
+                      args.path
+                    )
+                  : path.join(args.resolveDir, args.path);
                 const fileContent = await readFile(filePath);
                 const fileHash = crypto
                   .createHash("sha1")
